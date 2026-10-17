@@ -61,7 +61,7 @@ python build-desktop.py
 
 工作流：`.github/workflows/desktop.yml`，名称 **Build Flow Desktop**。将此项目上传到 GitHub 后即可使用，无需配置额外 Secret。
 
-- 手动构建：仓库 **Actions → Build Flow Desktop → Run workflow**。工作流文件需先进入仓库默认分支。
+- 手动构建与发布：仓库 **Actions → Build Flow Desktop → Run workflow**。默认勾选 `publish_release`，构建成功后创建版本标签并发布 Release；取消勾选则只保存 Artifacts。工作流文件需先进入仓库默认分支。
 - 自动构建：向 `main` / `master` 推送代码，或提交到这些分支的 Pull Request 时构建（仅修改 Markdown 文档会跳过）。
 - 版本发布：先确认 `runtime_paths.py` 中 `VERSION`，再推送相同版本标签。例如当前版本 `2.1.0`：
 
@@ -70,7 +70,7 @@ git tag v2.1.0
 git push origin v2.1.0
 ```
 
-标签必须为 `v` 加代码版本号，否则构建会报错。四个目标全部成功后，自动创建 GitHub Release 并上传应用包和校验文件；手动/分支/PR 构建只保存 Artifacts，不发布 Release。预发布版本需同时将代码版本和标签设为例如 `2.2.0-beta.1` / `v2.2.0-beta.1`，Release 会标记为预发布。
+标签必须为 `v` 加代码版本号，否则构建会报错。四个目标全部成功后，自动创建 GitHub Release 并上传应用包和校验文件。普通分支推送和 PR 构建只保存 Artifacts；手动触发可通过 `publish_release` 控制发布。预发布版本需同时将代码版本和标签设为例如 `2.2.0-beta.1` / `v2.2.0-beta.1`，Release 会标记为预发布。
 
 | 构建目标 | Runner | 产物示例 |
 | --- | --- | --- |
@@ -78,6 +78,8 @@ git push origin v2.1.0
 | Windows x86_64 | windows-2022 | `Flow-2.1.0-windows-x86_64.zip` |
 | macOS Intel | macos-15-intel | `Flow-2.1.0-macos-x86_64.zip` |
 | macOS Apple Silicon | macos-15 | `Flow-2.1.0-macos-arm64.zip` |
+
+已经构建成功但没有 Release 时，不必重新编译：手动运行工作流，保持 `publish_release` 勾选，将成功构建 URL 最后的数字填入 `build_run_id`，例如 `39011914736`。流水线会验证来源仓库、构建状态和四个平台产物是否有效，读取该次构建的版本与提交，再发布这些已有产物。留空 `build_run_id` 则重新编译。若版本标签已经指向其他提交，会拒绝覆盖，应先提升版本号并重新构建。
 
 在运行详情页 **Artifacts** 下载，构建产物保留 14 天；失败时提供 PyInstaller 诊断文件，保留 7 天。每个包附带 `.sha256` 文件。版本 Release 下的附件可长期下载。构建使用普通只读权限，仅标签发布 Job 请求 `contents: write`；如组织策略禁用 Release 写入，需在仓库/组织 Actions 设置中放行。分发包暂未加入 Apple 签名/公证或 Windows 代码签名。Linux 包仍需系统 GTK/WebKitGTK 和兼容的系统库。
 

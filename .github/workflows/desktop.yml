@@ -2,6 +2,15 @@ name: Build Flow Desktop
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish a version Release after building
+        type: boolean
+        default: true
+      build_run_id:
+        description: Reuse a successful build run ID (leave empty to rebuild)
+        type: string
+        required: false
   push:
     branches: [main, master]
     tags: ['v*']
@@ -12,13 +21,76 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: desktop-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  prepare:
+    name: Resolve build source and version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      source_run: ${{ steps.source.outputs.source_run }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Resolve source commit
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REQUESTED_RUN: ${{ inputs.build_run_id }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          python - <<'PYCODE'
+          import json, os, subprocess
+          run_id = os.environ.get('REQUESTED_RUN', '').strip()
+          sha = os.environ['CURRENT_SHA']
+          if run_id:
+              if not run_id.isdecimal():
+                  raise SystemExit('Build run ID must be numeric')
+              repo = os.environ['GH_REPO']
+              run = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/actions/runs/{run_id}']))
+              workflow = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/actions/workflows/desktop.yml']))
+              if (run['status'] != 'completed' or run['conclusion'] != 'success'
+                      or run['workflow_id'] != workflow['id']
+                      or run['event'] not in ('push', 'workflow_dispatch')
+                      or run['head_repository']['full_name'].lower() != repo.lower()):
+                  raise SystemExit('Only successful push/manual runs of this repository desktop workflow can be reused')
+              artifacts = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/actions/runs/{run_id}/artifacts']))
+              expected = {'Flow-linux-x86_64', 'Flow-windows-x86_64', 'Flow-macos-x86_64', 'Flow-macos-arm64'}
+              available = {item['name'] for item in artifacts['artifacts'] if not item['expired']}
+              if not expected.issubset(available):
+                  raise SystemExit('Build artifacts are missing or expired; leave build_run_id empty to rebuild')
+              sha = run['head_sha']
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'sha={sha}\nsource_run={run_id}\n')
+          PYCODE
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          persist-credentials: false
+      - name: Read source version
+        id: version
+        run: |
+          python3 - <<'PYCODE'
+          import ast, os, re
+          from pathlib import Path
+          tree = ast.parse(Path('runtime_paths.py').read_text(encoding='utf-8'))
+          version = next(ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign)
+                         and any(isinstance(target, ast.Name) and target.id == 'VERSION' for target in node.targets))
+          if not isinstance(version, str) or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?', version):
+              raise SystemExit('Invalid VERSION in build source')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'version={version}\n')
+          PYCODE
+
   build:
+    needs: prepare
+    if: needs.prepare.outputs.source_run == ''
     name: ${{ matrix.target }}
     timeout-minutes: 35
     strategy:
@@ -147,12 +219,17 @@ jobs:
 
   release:
     name: Publish version release
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    if: >-
+      always() && needs.prepare.result == 'success' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped') &&
+      ((github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+       (github.event_name == 'workflow_dispatch' && inputs.publish_release))
+    needs: [prepare, build]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write
+      actions: read
     steps:
       - name: Download all application packages
         uses: actions/download-artifact@v8
@@ -160,6 +237,8 @@ jobs:
           pattern: Flow-*
           path: release
           merge-multiple: true
+          run-id: ${{ needs.prepare.outputs.source_run || github.run_id }}
+          github-token: ${{ github.token }}
       - name: Verify downloaded packages
         run: |
           cd release
@@ -168,8 +247,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: v${{ needs.prepare.outputs.version }}
+          BUILD_SHA: ${{ needs.prepare.outputs.sha }}
         run: |
+          # Never move a version tag or attach artifacts from another commit.
+          if tag_sha=$(gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" --jq '.object.sha' 2>/dev/null); then
+            tag_type=$(gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" --jq '.object.type')
+            if [[ "$tag_type" == tag ]]; then
+              tag_sha=$(gh api "repos/$GH_REPO/git/tags/$tag_sha" --jq '.object.sha')
+            fi
+            if [[ "$tag_sha" != "$BUILD_SHA" ]]; then
+              echo "Version tag $RELEASE_TAG points at another commit. Bump VERSION before publishing."
+              exit 1
+            fi
+          else
+            gh api --method POST "repos/$GH_REPO/git/refs" -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$BUILD_SHA"
+          fi
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" release/* --clobber
           else
