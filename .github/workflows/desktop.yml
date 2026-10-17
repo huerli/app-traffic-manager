@@ -78,7 +78,7 @@ jobs:
         with:
           name: Flow-${{ matrix.target }}
           path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/**
+            src-tauri/target/**/release/bundle/**
           if-no-files-found: error
           retention-days: 14
   release:
