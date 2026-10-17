@@ -18,7 +18,7 @@
 
 Windows 需要 WebView2 Runtime，并在 Clash 中启用本机 TCP API，例如 `external-controller: 127.0.0.1:9097`。Flow 不包含代理内核或订阅。
 
-默认管理地址为 <http://127.0.0.1:17891/>，仅供本机访问。策略修改通常在新连接中生效；编辑时可选择断开该应用已有连接。普通 DIRECT 仍可能经过 TUN；RustDesk 地址排除才是绕过 TUN。
+默认管理地址为 [http://127.0.0.1:17891/](http://127.0.0.1:17891/)，仅供本机访问。策略修改通常在新连接中生效；编辑时可选择断开该应用已有连接。普通 DIRECT 仍可能经过 TUN；RustDesk 地址排除才是绕过 TUN。
 
 **从旧版升级：**先关闭旧后台并停用旧自启，再打开新版。否则 App 可能复用旧后台，显示旧版页面。保留数据目录即可沿用配置。
 
@@ -73,13 +73,13 @@ Linux Python 桌面入口另需 `python3-gi`、`python3-gi-cairo`、`gir1.2-gtk-
 
 ## 数据与排错
 
-| 系统 | 数据目录 |
-| --- | --- |
-| Windows | `%LOCALAPPDATA%\RustDeskClashBypass` |
-| Linux | `~/.local/share/rustdesk-clash-bypass` |
-| macOS | `~/Library/Application Support/RustDeskClashBypass` |
+| 系统    | 数据目录                                              |
+| ------- | ----------------------------------------------------- |
+| Windows | `%LOCALAPPDATA%\RustDeskClashBypass`                |
+| Linux   | `~/.local/share/rustdesk-clash-bypass`              |
+| macOS   | `~/Library/Application Support/RustDeskClashBypass` |
 
-目录名沿用旧版以兼容配置。`settings.json` 保存 Clash 路径，`policies.json` 保存规则，`webdav.json` 保存同步设置和凭据。启动问题查看 `tauri.log`、`desktop.log`；源码后台还可查看 `bypass.log`。
+目录名沿用旧版以兼容配置。`settings.json` 保存 Clash 路径，`policies.json` 保存规则，`webdav.json` 保存同步设置和凭据，`desktop.json` 保存窗口关闭行为。启动问题查看 `tauri.log`、`desktop.log`；源码后台还可查看 `bypass.log`。
 
 - 页面版本不符或端口被占用：检查旧版后台和登录自启。
 - Clash 连接失败：检查运行状态、规则模式及本机 API；401 通常表示 API 密钥不匹配。

@@ -9,6 +9,13 @@ fn data_dir() -> PathBuf {
     else if cfg!(target_os="macos") { PathBuf::from(env::var("HOME").unwrap_or_else(|_| ".".into())).join("Library/Application Support/RustDeskClashBypass") }
     else { PathBuf::from(env::var("XDG_DATA_HOME").unwrap_or_else(|_| format!("{}/.local/share", env::var("HOME").unwrap_or_else(|_| ".".into())))).join("rustdesk-clash-bypass") }
 }
+fn minimize_on_close() -> bool {
+    let path = data_dir().join("desktop.json");
+    fs::read_to_string(path).ok()
+        .and_then(|contents| serde_json::from_str::<serde_json::Value>(&contents).ok())
+        .and_then(|value| value["close_action"].as_str().map(str::to_owned))
+        .as_deref() == Some("minimize")
+}
 fn launch_backend(app: &tauri::AppHandle) -> Result<(), String> {
     let data = data_dir();
     fs::create_dir_all(&data).map_err(|e| e.to_string())?;
@@ -38,7 +45,15 @@ fn launch_backend(app: &tauri::AppHandle) -> Result<(), String> {
     app.get_webview_window("main").ok_or("找不到主窗口")?.navigate(url).map_err(|e| e.to_string())
 }
 fn main() {
-    let result = tauri::Builder::default().manage(Backend(Mutex::new(None))).setup(|app| {
+    let result = tauri::Builder::default().manage(Backend(Mutex::new(None)))
+    .on_window_event(|window, event| {
+        if window.label() == "main" && minimize_on_close() {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.minimize();
+            }
+        }
+    }).setup(|app| {
         let handle = app.handle().clone();
         std::thread::spawn(move || {
             if let Err(error) = launch_backend(&handle) {

@@ -306,6 +306,16 @@ def start_server(w, guard):
                 self.reply(200, {'application': 'flow-traffic-manager', 'version': VERSION})
             elif self.path == '/api/service':
                 self.reply(200, service.public())
+            elif self.path == '/api/preferences':
+                path = w.data / 'desktop.json'
+                try:
+                    preferences = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
+                    close_action = preferences.get('close_action', 'exit')
+                    if close_action not in ('minimize', 'exit'):
+                        close_action = 'exit'
+                    self.reply(200, {'close_action': close_action})
+                except (OSError, ValueError, AttributeError):
+                    self.reply(503, {'error': '读取桌面设置失败'})
             elif self.path == '/api/sync':
                 self.reply(200, sync.public())
             elif self.path == '/api/state':
@@ -330,7 +340,7 @@ def start_server(w, guard):
         def do_POST(self):
             if not self.allowed(mutation=True):
                 return
-            if self.path not in ('/api/policies', '/api/sync', '/api/service'):
+            if self.path not in ('/api/policies', '/api/sync', '/api/service', '/api/preferences'):
                 self.reply(404, {'error': '接口不存在'})
                 return
             try:
@@ -342,6 +352,13 @@ def start_server(w, guard):
                     raise ValueError('请求格式必须为对象')
                 if self.path == '/api/service':
                     self.reply(200, service.configure(data.get('enabled')))
+                    return
+                if self.path == '/api/preferences':
+                    close_action = data.get('close_action')
+                    if close_action not in ('minimize', 'exit'):
+                        raise ValueError('请选择有效的关闭行为')
+                    core.atomic(w.data / 'desktop.json', json.dumps({'close_action': close_action}, ensure_ascii=False, indent=2))
+                    self.reply(200, {'close_action': close_action})
                     return
                 if self.path == '/api/sync':
                     try:

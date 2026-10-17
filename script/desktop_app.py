@@ -261,6 +261,17 @@ class DesktopController:
         if selected:
             self._launch(selected[0])
 
+    def _on_closing(self):
+        if not self._ready:
+            return
+        try:
+            preferences = json.loads((self._data / 'desktop.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            preferences = {}
+        if preferences.get('close_action') == 'minimize':
+            self._window.minimize()
+            return False
+
     def _close(self):
         self._backend.close()
 
@@ -301,6 +312,7 @@ def main(argv=None):
                                   width=1280, height=880, min_size=(820, 600),
                                   background_color='#f5f6f8', text_select=True)
     controller._window = window
+    window.events.closing += controller._on_closing
     # Start only after the first document exists, so errors can be shown in the window.
     window.events.loaded += controller._launch
     try:
