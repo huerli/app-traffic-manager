@@ -88,7 +88,9 @@ Linux Python 桌面入口另需 `python3-gi`、`python3-gi-cairo`、`gir1.2-gtk-
 
 ## 自动构建
 
-`.github/workflows/desktop.yml` 构建 Windows x64、Linux x64、macOS Intel / Apple Silicon。推送 `main` / `master` 或版本标签后构建并发布；PR 仅保存产物。手动运行可通过 `publish_release` 控制是否发布。
+`.github/workflows/desktop.yml` 构建 Windows x64、Linux x64、macOS Intel / Apple Silicon。仅推送 `v*` 版本标签时自动构建并发布，普通分支推送和 PR 不触发。保留手动运行入口，可通过 `publish_release` 控制是否发布。
+
+版本号更新并提交后，执行 `git tag v<版本号>` 和 `git push origin v<版本号>` 触发发布，标签必须与代码版本一致。
 
 仅发布各平台安装包及 SHA-256 校验文件。流水线检查版本一致性和标签对应提交，先上传至草稿，再正式发布；已发布版本禁止覆盖，更新时需提升版本号。
 
