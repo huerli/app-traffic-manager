@@ -102,5 +102,13 @@ jobs:
           if ! gh api "repos/$REPO/git/ref/tags/$tag" >/dev/null 2>&1; then
             gh api --method POST "repos/$REPO/git/refs" -f "ref=refs/tags/$tag" -f "sha=$SHA"
           fi
-          assets=$(find release -type f)
-          gh release create "$tag" $assets --verify-tag --generate-notes --title "Flow $tag" || gh release upload "$tag" $assets --clobber
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --title "Flow $tag" --notes "跨平台桌面安装包，下载对应平台版本即可使用。"
+            while IFS= read -r asset; do
+              gh release delete-asset "$tag" "$asset" --yes || true
+            done < <(gh release view "$tag" --json assets --jq '.assets[].name')
+          else
+            gh release create "$tag" --verify-tag --generate-notes --title "Flow $tag" --notes "跨平台桌面安装包，下载对应平台版本即可使用。"
+          fi
+          mapfile -d '' assets < <(find release -type f -print0)
+          gh release upload "$tag" "${assets[@]}" --clobber
