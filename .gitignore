@@ -4,3 +4,8 @@ __pycache__/
 build/
 dist/
 .venv/
+src-tauri/target/
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
+src-tauri/gen/
+*.spec
