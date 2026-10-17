@@ -180,7 +180,7 @@ class DesktopBackend:
 def run_service(data, parent_pid=0):
     from background_service import BackgroundService, parent_alive
     manager = BackgroundService(data)
-    if not parent_pid and not manager.enabled() and not manager.has_sessions():
+    if not parent_pid and not manager.enabled() and not manager.has_sessions() and os.environ.get('FLOW_TAURI') != '1':
         return
     backend = EmbeddedBackend(data)
     shutdown = threading.Event()

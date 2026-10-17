@@ -22,6 +22,12 @@ RustDesk 自动识别远端 IP、绕过 TUN 是其中的一项专用功能。
 
 Linux 已在当前机器安装验证；Windows/macOS 已实现平台适配和安装脚本，并完成跨平台逻辑测试，尚未在这两个系统实机安装验证。细项见 `COMPATIBILITY.md`。
 
+### Tauri v2 架构与自动发布
+
+桌面 App 正在统一迁移到 **Tauri v2 + Rust + Python sidecar**：Rust 管理窗口、后台服务、生命周期和跨平台系统集成；现有 Python 逻辑打包为 `flow-backend` sidecar，继续负责 RustDesk 日志解析、规则维护和 WebDAV 兼容；`web/index.html` 作为 Tauri 前端直接复用。源码入口为 `src-tauri/`、`tauri_sidecar.py` 和 `build-sidecar.py`。
+
+GitHub Actions 使用 `.github/workflows/desktop.yml` 构建 Linux、Windows、macOS Intel 和 Apple Silicon。Tauri 构建成功后，发布 Job 会根据 `runtime_paths.py` 的 `VERSION` 自动创建 `v<VERSION>` 标签并发布 GitHub Release。手动运行时勾选 `publish_release` 才发布；Pull Request 和普通分支构建只保存 Artifacts。Tauri sidecar 按目标平台分别打包，不能跨平台复用。
+
 ## 桌面 App
 
 安装后从应用菜单、开始菜单或 `~/Applications/Flow Traffic Manager.app` 启动。界面运行于独立原生窗口，不需要打开浏览器。原有浏览器地址仍可作为备用入口。

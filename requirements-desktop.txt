@@ -1,2 +1,4 @@
 -r requirements.txt
 pywebview==6.2.1
+
+# Tauri uses Python only for the packaged backend sidecar.
