@@ -25,7 +25,7 @@ fn launch_backend(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 fn main() {
-    tauri::Builder::default().manage(Backend(Mutex::new(None))).setup(|app| { launch_backend(app.handle()).map_err(|e| tauri::Error::Setup(e.into()))?; Ok(()) })
+    tauri::Builder::default().manage(Backend(Mutex::new(None))).setup(|app| { launch_backend(app.handle()).map_err(|e| tauri::Error::Setup(std::io::Error::other(e).into()))?; Ok(()) })
       .build(tauri::generate_context!()).expect("error while running Flow").run(|app, event| {
         if let RunEvent::Exit = event { if let Some(mut child) = app.state::<Backend>().0.lock().unwrap().take() { let _ = child.kill(); } }
       });
