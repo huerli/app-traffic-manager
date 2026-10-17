@@ -71,7 +71,8 @@ jobs:
     needs: build
     if: >-
       always() && needs.build.result == 'success' &&
-      ((github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      ((github.event_name == 'push' &&
+        (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) ||
        (github.event_name == 'workflow_dispatch' && (inputs.publish_release == true || inputs.publish_release == 'true')))
     runs-on: ubuntu-24.04
     permissions:
