@@ -9,3 +9,4 @@ src-tauri/binaries/*
 !src-tauri/binaries/.gitkeep
 src-tauri/gen/
 *.spec
+node_modules/

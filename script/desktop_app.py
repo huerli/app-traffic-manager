@@ -1,5 +1,6 @@
 """Native Flow desktop entry point for macOS, Windows and Linux."""
 import argparse
+import http.cookiejar
 import json
 import logging
 from logging.handlers import RotatingFileHandler
@@ -14,7 +15,7 @@ import urllib.error
 import urllib.request
 
 import bypass as core
-from runtime_paths import Layout, VERSION
+from runtime_paths import Layout, VERSION, resource_root
 
 
 APP_ID = 'local.flow.traffic-manager'
@@ -55,6 +56,23 @@ def backend_ready(url):
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         with opener.open(url + 'health', timeout=1) as response:
             return json.loads(response.read(4096)).get('application') == 'flow-traffic-manager'
+    except urllib.error.HTTPError as exc:
+        if exc.code != 404:
+            return False
+        # Older installed Flow services predate /health. Authenticate normally
+        # and verify their dashboard and state before reusing the occupied port.
+        try:
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),
+                urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+            with opener.open(url, timeout=1) as response:
+                if b'RustDeskTrafficManager' not in response.read(2_000_000):
+                    return False
+            with opener.open(url + 'api/state', timeout=1) as response:
+                state = json.loads(response.read(4_000_000))
+                return isinstance(state, dict) and all(key in state for key in
+                    ('policies', 'apps', 'peers', 'routes', 'version'))
+        except (OSError, ValueError, AttributeError):
+            return False
     except (OSError, ValueError, AttributeError):
         return False
 
@@ -187,7 +205,11 @@ def run_service(data, parent_pid=0):
     for signum in (signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, lambda *_: shutdown.set())
     try:
-        backend.start()
+        if os.environ.get('FLOW_TAURI') == '1':
+            initialize(data)
+        url = backend.start()
+        if os.environ.get('FLOW_TAURI') == '1':
+            print(json.dumps({'url': url}), flush=True)
         if backend.server is None:
             return  # An existing process already owns the controller and watcher lock.
         while not shutdown.wait(1):
@@ -274,7 +296,7 @@ def main(argv=None):
     webview.settings['ALLOW_FILE_URLS'] = False
     webview.settings['OPEN_EXTERNAL_LINKS_IN_BROWSER'] = True
     controller = DesktopController(args.data_dir, webview)
-    html = (Path(__file__).parent / 'desktop/startup.html').read_text(encoding='utf-8')
+    html = (resource_root() / 'desktop/startup.html').read_text(encoding='utf-8')
     window = webview.create_window('Flow · 应用流量管理', html=html, js_api=controller,
                                   width=1280, height=880, min_size=(820, 600),
                                   background_color='#f5f6f8', text_select=True)
@@ -283,7 +305,7 @@ def main(argv=None):
     window.events.loaded += controller._launch
     try:
         webview.start(gui='gtk' if sys.platform.startswith('linux') else None,
-                      private_mode=True, debug=False, icon=str(Path(__file__).parent/'desktop/flow.png'))
+                      private_mode=True, debug=False, icon=str(resource_root()/'desktop/flow.png'))
     finally:
         controller._close()
 

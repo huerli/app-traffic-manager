@@ -18,7 +18,7 @@ import secrets
 import threading
 import urllib.parse
 import bypass as core
-from runtime_paths import platform_name, VERSION, canonical_match
+from runtime_paths import platform_name, VERSION, canonical_match, resource_root
 
 
 @lru_cache(maxsize=1)
@@ -256,7 +256,7 @@ def start_server(w, guard):
     token = token_path.read_text().strip()
     address = f'127.0.0.1:{port}'
     allowed_hosts = {address, f'localhost:{port}'}
-    index = Path(__file__).with_name('web') / 'index.html'
+    index = resource_root() / 'web/index.html'
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):

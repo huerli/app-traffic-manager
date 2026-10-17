@@ -5,7 +5,15 @@ from pathlib import Path
 import sys
 import tempfile
 
-VERSION = '2.1.0'
+VERSION = '2.1.1'
+
+
+def resource_root():
+    """Locate shared assets in the source checkout or PyInstaller bundle."""
+    if getattr(sys, 'frozen', False):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parent.parent
+
 APP_NAMES = ('io.github.clash-verge-rev.clash-verge-rev',
              'io.github.clash-verge-rev.clash-verge', 'clash-verge')
 
