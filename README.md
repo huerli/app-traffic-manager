@@ -1,6 +1,6 @@
 # Flow 应用流量管理
 
-基于 Clash Verge Rev / Mihomo，按应用和域名选择直连、代理组、具体代理节点或沿用订阅规则。支持 Windows、Linux、macOS，当前版本 **2.1.1**。
+基于 Clash Verge Rev / Mihomo，按应用和域名选择直连、代理组、具体代理节点或沿用订阅规则。支持 Windows、Linux、macOS，当前版本 **2.1.2**。
 
 - 按进程名称或完整路径分流，查看连接、流量和代理链。
 - 设置域名规则，优先于应用规则。
