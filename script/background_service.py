@@ -137,7 +137,10 @@ class BackgroundService:
                     self._run(['systemctl','--user','daemon-reload'])
                     self._run(['systemctl','--user','enable',UNIT])
                 else:
-                    self._run(['systemctl','--user','disable',UNIT])
+                    # The unit may already be gone (for example after an app upgrade);
+                    # disabling must still clear the stored setting.
+                    self._run(['systemctl','--user','disable',UNIT], check=False)
+                    path.unlink(missing_ok=True)
             elif self.system == 'macOS':
                 domain = f'gui/{os.getuid()}'
                 if enabled:
@@ -148,7 +151,7 @@ class BackgroundService:
                     path.write_bytes(plistlib.dumps(content))
                     self._run(['launchctl','enable',domain+'/'+LABEL])
                 else:
-                    self._run(['launchctl','disable',domain+'/'+LABEL])
+                    self._run(['launchctl','disable',domain+'/'+LABEL], check=False)
                     path.unlink(missing_ok=True)
             else:
                 if enabled:

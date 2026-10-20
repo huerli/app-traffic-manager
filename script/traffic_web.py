@@ -145,13 +145,15 @@ def application_icons(apps, policies):
     return windows_icons(tuple(sorted(requests))[:256], int(time.monotonic() // 60))
 
 
-def validate_policies(value, groups):
+def validate_policies(value, groups, proxies=()):
     if not isinstance(value, dict) or not isinstance(value.get('apps'), list):
         raise ValueError('应用规则格式不正确')
     if len(value['apps']) > 128:
         raise ValueError('最多保存 128 条应用规则')
     if not isinstance(value.get('rustdesk_bypass'), bool):
         raise ValueError('RustDesk 绕过 TUN 开关格式不正确')
+    targets = ['DIRECT'] + list(dict.fromkeys(
+        [x for x in groups if isinstance(x, str)] + [x for x in proxies if isinstance(x, str)]))
     apps, seen = [], set()
     bypass = value['rustdesk_bypass']
     for app in value['apps']:
@@ -161,8 +163,8 @@ def validate_policies(value, groups):
         if not isinstance(name, str) or not name.strip() or len(name) > 1024 or re.search(r'[,\x00-\x1f\x7f]', name):
             raise ValueError('进程名称或路径不能为空，且不能包含逗号或控制字符')
         name = name.strip()
-        if not isinstance(target, str) or target not in ['DIRECT'] + groups:
-            raise ValueError('请选择当前存在的代理组或直连')
+        if not isinstance(target, str) or target not in targets:
+            raise ValueError('请选择当前存在的代理组、代理节点或直连')
         key = (app['type'], canonical_match(name, app['type']))
         if key in seen:
             raise ValueError('同一个进程不能重复添加规则')
@@ -187,8 +189,8 @@ def validate_policies(value, groups):
             raise ValueError('请输入有效域名')
         if len(name) > 253 or '.' not in name or any(not re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?', label) for label in name.split('.')):
             raise ValueError('请输入域名，不含协议、端口或页面路径')
-        if rule.get('target') not in ['DIRECT'] + groups:
-            raise ValueError('请选择当前存在的代理组或直连')
+        if rule.get('target') not in targets:
+            raise ValueError('请选择当前存在的代理组、代理节点或直连')
         key = (rule['type'], name)
         if key in seen_domains:
             raise ValueError('同一个域名不能重复添加规则')
@@ -208,6 +210,10 @@ def matches(app, meta):
 def snapshot(w):
     config = core.read_yaml(w.clash / 'clash-verge.yaml')
     groups = [g['name'] for g in config.get('proxy-groups', []) if isinstance(g.get('name'), str) and not re.search(r'[,\x00-\x1f]', g['name'])]
+    proxies = core.proxy_names(config)
+    targets = set(['DIRECT'] + groups + proxies)
+    stale = sorted({rule['target'] for rule in w.policies.get('apps', []) + w.policies.get('domains', [])
+                    if isinstance(rule, dict) and isinstance(rule.get('target'), str) and rule['target'] not in targets})
     error = w.last_error
     connections, mode = [], config.get('mode', 'rule')
     try:
@@ -232,7 +238,8 @@ def snapshot(w):
         host = meta.get('host') or meta.get('destinationIP')
         if host and host not in row['destinations'] and len(row['destinations']) < 4:
             row['destinations'].append(host)
-    return {'connected': connected, 'mode': mode, 'error': error, 'groups': groups,
+    return {'connected': connected, 'mode': mode, 'error': error, 'groups': groups, 'proxies': proxies,
+            'stale_targets': stale,
             'icons': application_icons(list(grouped.values()), w.policies),
             'policies': w.policies, 'apps': sorted(grouped.values(), key=lambda r: -r['connections']),
             'peers': [{'ip': ip, 'last_seen': seen} for ip, seen in w.state['peers'].items()],
@@ -371,8 +378,9 @@ def start_server(w, guard):
                 with guard:
                     cfg = core.read_yaml(w.clash / 'clash-verge.yaml')
                     groups = [g['name'] for g in cfg.get('proxy-groups', [])]
+                    proxies = core.proxy_names(cfg)
                     data.setdefault('domains', w.policies.get('domains', []))
-                    policies = validate_policies(data, groups)
+                    policies = validate_policies(data, groups, proxies)
                     old = w.policies
                     w.policies = policies
                     try:

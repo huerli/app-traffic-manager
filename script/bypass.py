@@ -22,6 +22,7 @@ BEGIN = '// BEGIN RUSTDESK_AUTO_BYPASS'
 END = '// END RUSTDESK_AUTO_BYPASS'
 BLOCK = re.compile(r'\n?' + re.escape(BEGIN) + r'.*?' + re.escape(END) + r'\n?', re.S)
 RULES = ['PROCESS-NAME,rustdesk,DIRECT', 'PROCESS-NAME,rustdesk.exe,DIRECT', 'PROCESS-NAME,RustDesk,DIRECT']
+BUILTIN_TARGETS = {'DIRECT', 'REJECT', 'REJECT-DROP', 'PASS', 'COMPATIBLE', 'GLOBAL'}
 EVENT = re.compile(r'(?:Punch (?:tcp|udp) hole to|create_relay requested from|Connection opened from|peer address:|Hole Punched [^=\r\n]{1,128}\s*=)\s+(\[[0-9a-fA-F:]+\]|[0-9.]+):\d+', re.I)
 STAMP = re.compile(r'^\[(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?:\.\d+)? ?[+-]\d\d:\d\d)\]')
 
@@ -37,6 +38,18 @@ def read_yaml(path):
     if not isinstance(value, dict):
         raise ValueError(f'Expected YAML mapping: {path}')
     return value
+
+def proxy_names(config):
+    """Individual proxies that can be used directly as a Clash rule target."""
+    groups = {g.get('name') for g in config.get('proxy-groups', []) if isinstance(g, dict)}
+    names, seen = [], set()
+    for item in config.get('proxies', []) or []:
+        name = item.get('name') if isinstance(item, dict) else None
+        if (isinstance(name, str) and name and name not in groups and name not in BUILTIN_TARGETS
+                and name not in seen and not re.search(r'[,\x00-\x1f\x7f]', name)):
+            seen.add(name)
+            names.append(name)
+    return names
 
 def public_ip(value):
     try:
@@ -172,7 +185,13 @@ main = function(config, profileName) {
   config.tun["route-exclude-address"] = [...new Set([
     ...(config.tun["route-exclude-address"] || []), ...ROUTES
   ])];
-  config.rules = [...RULES, ...(config.rules || []).filter(r => !RULES.includes(r))];
+  // Rules are global but profiles have different groups/nodes. Drop rules whose
+  // target is absent here instead of failing validation for the whole profile.
+  const targets = new Set(["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE", "GLOBAL",
+    ...(config.proxies || []).map(p => p && p.name).filter(Boolean),
+    ...(config["proxy-groups"] || []).map(g => g && g.name).filter(Boolean)]);
+  const injected = RULES.filter(rule => targets.has(rule.slice(rule.lastIndexOf(",") + 1)));
+  config.rules = [...injected, ...(config.rules || []).filter(r => !RULES.includes(r))];
   return config;
 };
 '''.replace('ROUTES', json.dumps(routes)).replace('RULES', json.dumps(rules, ensure_ascii=False)) + END + '\n'

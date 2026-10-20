@@ -163,8 +163,9 @@ class WebDAVSync:
         with self.guard:
             cfg = core.read_yaml(self.w.clash / 'clash-verge.yaml')
             groups = {g['name'] for g in cfg.get('proxy-groups', [])}
+            targets = groups | set(core.proxy_names(cfg)) | {'DIRECT'}
             local_hash = digest(portable(self.w.policies))
-        missing = sorted({r.get('target', '') for r in policies['apps'] + policies['domains'] if isinstance(r, dict)} - groups - {'DIRECT'})
+        missing = sorted({r.get('target', '') for r in policies['apps'] + policies['domains'] if isinstance(r, dict)} - targets)
         return {'empty': False, 'apps': len(policies['apps']), 'domains': len(policies['domains']),
                 'updated_at': snapshot.get('updated_at'), 'remote_hash': digest(snapshot), 'local_hash': local_hash,
                 'missing_groups': missing, 'available_groups': sorted(groups),
@@ -218,17 +219,19 @@ class WebDAVSync:
                 raise Conflict('本机规则已变化，请重新查看摘要后下载。')
             cfg = core.read_yaml(self.w.clash / 'clash-verge.yaml')
             groups = [g['name'] for g in cfg.get('proxy-groups', [])]
+            proxies = core.proxy_names(cfg)
+            local_targets = ['DIRECT'] + groups + proxies
             mapping = value.get('group_mapping', {})
             if not isinstance(mapping, dict) or any(not isinstance(source, str) or target not in groups for source, target in mapping.items()):
                 raise SyncError('请选择本机已有的代理组进行映射。')
             incoming = copy.deepcopy(snapshot['policies'])
             for rule in incoming['apps'] + incoming['domains']:
-                if isinstance(rule, dict) and rule.get('target') not in ['DIRECT'] + groups:
+                if isinstance(rule, dict) and rule.get('target') not in local_targets:
                     target = rule.get('target')
                     if target not in mapping:
-                        raise SyncError(f'本机缺少代理组 {target}，请先选择对应的本机代理组。')
+                        raise SyncError(f'本机缺少代理组或节点 {target}，请先选择对应的本机代理组。')
                     rule['target'] = mapping[target]
-            policies = self.validate({**incoming, 'rustdesk_bypass': self.w.policies.get('rustdesk_bypass', True)}, groups)
+            policies = self.validate({**incoming, 'rustdesk_bypass': self.w.policies.get('rustdesk_bypass', True)}, groups, proxies)
             old = copy.deepcopy(self.w.policies)
             backup = self.w.data / 'policies-before-sync.json'
             core.atomic(backup, json.dumps(old, ensure_ascii=False, indent=2))
