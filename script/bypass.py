@@ -196,6 +196,26 @@ main = function(config, profileName) {
 };
 '''.replace('ROUTES', json.dumps(routes)).replace('RULES', json.dumps(rules, ensure_ascii=False)) + END + '\n'
 
+def direct_routes(policies):
+    """IP/CIDR rules that resolve to DIRECT, as TUN route exclusions.
+
+    TUN routing works on destination addresses only, so an IP/CIDR rule can be
+    excluded from TUN exactly like a learned RustDesk peer: its traffic leaves
+    through the physical NIC instead of entering the TUN stack. Domain and
+    process rules cannot be excluded this way.
+    """
+    result = []
+    for rule in policies.get('domains', []) or []:
+        if (not isinstance(rule, dict) or rule.get('type') not in ('IP-CIDR', 'IP-CIDR6')
+                or rule.get('target') != 'DIRECT'):
+            continue
+        try:
+            result.append(str(ipaddress.ip_network(str(rule.get('value')), strict=False)))
+        except ValueError:
+            continue
+    return list(dict.fromkeys(result))
+
+
 class Watcher:
     def __init__(self, data):
         self.data = Path(data)
@@ -261,7 +281,9 @@ class Watcher:
         ] + [
             f"{app['type']},{app['value']},{app['target']}" for app in self.policies.get("apps", [])
         ] + RULES))
-        new_script = base_script if uninstall else base_script + wrapper(routes, desired_rules)
+        # Both the learned RustDesk addresses and DIRECT IP/CIDR rules bypass TUN.
+        desired = [] if uninstall else list(dict.fromkeys((routes or []) + direct_routes(self.policies)))
+        new_script = base_script if uninstall else base_script + wrapper(desired, desired_rules)
         config = read_yaml(config_path)
         targets = BUILTIN_TARGETS | set(proxy_names(config)) | {
             g.get('name') for g in config.get('proxy-groups', []) if isinstance(g, dict)
@@ -272,7 +294,6 @@ class Watcher:
         original = tun.get('route-exclude-address', []) or []
         # Only remove entries previously added by this helper.
         baseline = [r for r in original if r not in previous]
-        desired = [] if uninstall else routes
         new_routes = list(dict.fromkeys(baseline + desired))
         rules = config.get('rules', [])
         owned_rules = self.state.get('managed_rules', [])

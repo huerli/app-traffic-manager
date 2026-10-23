@@ -23,6 +23,13 @@ LINUX_APP_ID = 'flow-traffic-manager'
 LINUX_WM_CLASS = 'Flow-traffic-manager'
 
 
+def window_icon():
+    """Return the native window icon format expected by the current platform."""
+    name = 'flow.ico' if sys.platform == 'win32' else 'flow.png'
+    icon = resource_root() / 'desktop' / name
+    return str(icon) if icon.is_file() else None
+
+
 def configure_app_identity():
     """Set OS application identity before importing or initializing the GUI."""
     if sys.platform.startswith('linux'):
@@ -380,7 +387,7 @@ def main(argv=None):
     window.events.loaded += controller._launch
     try:
         webview.start(gui='gtk' if sys.platform.startswith('linux') else None,
-                      private_mode=True, debug=False, icon=str(resource_root()/'desktop/flow.png'))
+                      private_mode=True, debug=False, icon=window_icon())
     finally:
         controller._close()
 

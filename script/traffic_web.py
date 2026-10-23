@@ -233,7 +233,9 @@ def matches(app, meta):
 
 def snapshot(w):
     config = core.read_yaml(w.clash / 'clash-verge.yaml')
-    groups = [g['name'] for g in config.get('proxy-groups', []) if isinstance(g.get('name'), str) and not re.search(r'[,\x00-\x1f]', g['name'])]
+    groups = [g['name'] for g in (config.get('proxy-groups') or [])
+              if isinstance(g, dict) and isinstance(g.get('name'), str)
+              and not re.search(r'[,\x00-\x1f]', g['name'])]
     proxies = core.proxy_names(config)
     targets = set(['DIRECT'] + groups + proxies)
     stale = sorted({rule['target'] for rule in w.policies.get('apps', []) + w.policies.get('domains', [])
@@ -241,14 +243,23 @@ def snapshot(w):
     error = w.last_error
     connections, mode = [], config.get('mode', 'rule')
     try:
-        connections = core.api(config, w.clash, 'GET', '/connections', override=w.settings.get('controller')).get('connections', [])
-        live = core.api(config, w.clash, 'GET', '/configs', override=w.settings.get('controller'))
+        response = core.api(config, w.clash, 'GET', '/connections',
+                            override=w.settings.get('controller')) or {}
+        connections = response.get('connections')
+        if not isinstance(connections, list):
+            connections = []
+        live = core.api(config, w.clash, 'GET', '/configs',
+                        override=w.settings.get('controller')) or {}
+        if not isinstance(live, dict):
+            raise ValueError('Clash returned an invalid configs response')
         mode = live.get('mode', mode)
         connected = True
     except Exception as exc:
         error, connected = str(exc), False
     grouped = {}
     for item in connections:
+        if not isinstance(item, dict):
+            continue
         meta = item.get('metadata', {})
         process, path = meta.get('process') or '', meta.get('processPath') or ''
         key = (process, path)

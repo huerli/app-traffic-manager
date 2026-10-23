@@ -1,6 +1,6 @@
 [package]
 name = "flow-traffic-manager"
-version = "2.1.3"
+version = "2.1.4"
 description = "Cross-platform application traffic manager"
 authors = ["huerli"]
 edition = "2021"
