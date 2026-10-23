@@ -22,7 +22,7 @@ Windows 从源码运行：双击项目根目录的 `run.bat`，或在终端执�
 
 首次自动创建独立环境并安装依赖；需先安装 Python 3.10+ 和 WebView2 Runtime，并启动 Clash Verge Rev。
 
-基于 Clash Verge Rev / Mihomo，按应用、域名和 IP/CIDR 选择直连、代理组、具体代理节点或沿用订阅规则。支持 Windows、Linux、macOS，当前版本 **2.1.4**。
+基于 Clash Verge Rev / Mihomo，按应用、域名和 IP/CIDR 选择直连、代理组、具体代理节点或沿用订阅规则。支持 Windows、Linux、macOS，当前版本 **2.1.5**。
 
 - 按进程名称或完整路径分流，查看连接、流量和代理链。
 - 设置域名与 IPv4 / IPv6 CIDR 规则，优先于应用规则；IPv4 无掩码时，末位 .0 自动补 /24，其他地址补 /32。
