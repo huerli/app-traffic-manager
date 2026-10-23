@@ -1,1 +1,1 @@
-{"name":"flow-traffic-manager","private":true,"version":"2.1.2","scripts":{"tauri":"tauri","tauri:dev":"tauri dev","tauri:build":"tauri build"},"devDependencies":{"@tauri-apps/cli":"^2.9.0"}}
+{"name":"flow-traffic-manager","private":true,"version":"2.1.3","scripts":{"tauri":"tauri","tauri:dev":"tauri dev","tauri:build":"tauri build"},"devDependencies":{"@tauri-apps/cli":"^2.9.0"}}

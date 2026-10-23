@@ -10,3 +10,9 @@ src-tauri/binaries/*
 src-tauri/gen/
 *.spec
 node_modules/
+
+.run-venv/
+
+.run-venv-win/
+
+.build-venv-win/

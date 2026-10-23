@@ -263,6 +263,10 @@ class Watcher:
         ] + RULES))
         new_script = base_script if uninstall else base_script + wrapper(routes, desired_rules)
         config = read_yaml(config_path)
+        targets = BUILTIN_TARGETS | set(proxy_names(config)) | {
+            g.get('name') for g in config.get('proxy-groups', []) if isinstance(g, dict)
+        }
+        active_rules = [r for r in desired_rules if r.rsplit(',', 1)[-1] in targets]
         tun = config.setdefault('tun', {})
         previous = self.state.get('managed_routes', [])
         original = tun.get('route-exclude-address', []) or []
@@ -274,7 +278,7 @@ class Watcher:
         owned_rules = self.state.get('managed_rules', [])
         new_rules = [r for r in rules if r not in owned_rules]
         if not uninstall:
-            new_rules = list(dict.fromkeys(desired_rules + new_rules))
+            new_rules = list(dict.fromkeys(active_rules + new_rules))
         changed = new_routes != original or new_rules != rules
         if not changed and new_script == old_script:
             self.save()
@@ -290,7 +294,7 @@ class Watcher:
         old_state = dict(self.state)
         self.state['managed_routes'] = [r for r in desired if r not in baseline]
         baseline_rules = [r for r in rules if r not in owned_rules]
-        self.state['managed_rules'] = [] if uninstall else [r for r in desired_rules if r not in baseline_rules]
+        self.state['managed_rules'] = [] if uninstall else [r for r in active_rules if r not in baseline_rules]
         self.save()
         atomic(script_path, new_script)
         try:

@@ -4,6 +4,7 @@ import ntpath
 import subprocess
 import configparser
 import hashlib
+import ipaddress
 from functools import lru_cache
 import shlex
 import time
@@ -145,7 +146,7 @@ def application_icons(apps, policies):
     return windows_icons(tuple(sorted(requests))[:256], int(time.monotonic() // 60))
 
 
-def validate_policies(value, groups, proxies=()):
+def validate_policies(value, groups, proxies=(), previous=None):
     if not isinstance(value, dict) or not isinstance(value.get('apps'), list):
         raise ValueError('应用规则格式不正确')
     if len(value['apps']) > 128:
@@ -154,6 +155,11 @@ def validate_policies(value, groups, proxies=()):
         raise ValueError('RustDesk 绕过 TUN 开关格式不正确')
     targets = ['DIRECT'] + list(dict.fromkeys(
         [x for x in groups if isinstance(x, str)] + [x for x in proxies if isinstance(x, str)]))
+    retained = {
+        (section, r.get('type'), r.get('value'), r.get('target'))
+        for section in ('apps', 'domains')
+        for r in (previous or {}).get(section, []) if isinstance(r, dict)
+    }
     apps, seen = [], set()
     bypass = value['rustdesk_bypass']
     for app in value['apps']:
@@ -163,7 +169,7 @@ def validate_policies(value, groups, proxies=()):
         if not isinstance(name, str) or not name.strip() or len(name) > 1024 or re.search(r'[,\x00-\x1f\x7f]', name):
             raise ValueError('进程名称或路径不能为空，且不能包含逗号或控制字符')
         name = name.strip()
-        if not isinstance(target, str) or target not in targets:
+        if not isinstance(target, str) or (target not in targets and ('apps', app['type'], name, target) not in retained):
             raise ValueError('请选择当前存在的代理组、代理节点或直连')
         key = (app['type'], canonical_match(name, app['type']))
         if key in seen:
@@ -178,18 +184,36 @@ def validate_policies(value, groups, proxies=()):
         raise ValueError('域名规则必须为列表，最多 128 条')
     normalized, seen_domains = [], set()
     for rule in domains:
-        if not isinstance(rule, dict) or rule.get('type') not in ('DOMAIN', 'DOMAIN-SUFFIX'):
-            raise ValueError('请选择精确域名或域名及子域名')
+        if not isinstance(rule, dict) or rule.get('type') not in ('DOMAIN', 'DOMAIN-SUFFIX', 'IP-CIDR', 'IP-CIDR6'):
+            raise ValueError('请选择有效的域名或 IP/CIDR 规则')
         name = rule.get('value')
         if not isinstance(name, str):
             raise ValueError('请输入有效域名')
-        try:
-            name = name.strip().rstrip('.').encode('idna').decode('ascii').lower()
-        except UnicodeError:
-            raise ValueError('请输入有效域名')
-        if len(name) > 253 or '.' not in name or any(not re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?', label) for label in name.split('.')):
-            raise ValueError('请输入域名，不含协议、端口或页面路径')
-        if rule.get('target') not in targets:
+        name = name.strip()
+        if rule['type'] in ('IP-CIDR', 'IP-CIDR6'):
+            try:
+                # Bare IPv4 .0 addresses represent /24 networks by convention.
+                # Explicit prefixes always take precedence, including .0/32.
+                if '/' not in name:
+                    address = ipaddress.ip_address(name)
+                    prefix = 24 if address.version == 4 and int(address) & 255 == 0 else address.max_prefixlen
+                    name = f'{address}/{prefix}'
+                network = ipaddress.ip_network(name, strict=False)
+            except ValueError:
+                raise ValueError('请输入有效的 IP 地址或 CIDR 网段')
+            if rule['type'] == 'IP-CIDR' and network.version != 4:
+                raise ValueError('IP-CIDR 仅支持 IPv4')
+            if rule['type'] == 'IP-CIDR6' and network.version != 6:
+                raise ValueError('IP-CIDR6 仅支持 IPv6')
+            name = str(network)
+        else:
+            try:
+                name = name.rstrip('.').encode('idna').decode('ascii').lower()
+            except UnicodeError:
+                raise ValueError('请输入有效域名')
+            if len(name) > 253 or '.' not in name or any(not re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?', label) for label in name.split('.')):
+                raise ValueError('请输入域名，不含协议、端口或页面路径')
+        if rule.get('target') not in targets and ('domains', rule['type'], name, rule.get('target')) not in retained:
             raise ValueError('请选择当前存在的代理组、代理节点或直连')
         key = (rule['type'], name)
         if key in seen_domains:
@@ -380,7 +404,7 @@ def start_server(w, guard):
                     groups = [g['name'] for g in cfg.get('proxy-groups', [])]
                     proxies = core.proxy_names(cfg)
                     data.setdefault('domains', w.policies.get('domains', []))
-                    policies = validate_policies(data, groups, proxies)
+                    policies = validate_policies(data, groups, proxies, previous=w.policies)
                     old = w.policies
                     w.policies = policies
                     try:

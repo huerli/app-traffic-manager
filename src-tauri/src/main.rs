@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use std::{env, fs::{self, OpenOptions}, io::{BufRead, BufReader, Write}, path::PathBuf, process::{Child, Command, Stdio}, sync::Mutex};
-use tauri::Manager;
+use tauri::{Manager, menu::{Menu, MenuItem}, tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState}};
 
 struct Backend(Mutex<Option<Child>>);
 fn data_dir() -> PathBuf {
@@ -9,7 +9,7 @@ fn data_dir() -> PathBuf {
     else if cfg!(target_os="macos") { PathBuf::from(env::var("HOME").unwrap_or_else(|_| ".".into())).join("Library/Application Support/RustDeskClashBypass") }
     else { PathBuf::from(env::var("XDG_DATA_HOME").unwrap_or_else(|_| format!("{}/.local/share", env::var("HOME").unwrap_or_else(|_| ".".into())))).join("rustdesk-clash-bypass") }
 }
-fn minimize_on_close() -> bool {
+fn tray_on_close() -> bool {
     let path = data_dir().join("desktop.json");
     fs::read_to_string(path).ok()
         .and_then(|contents| serde_json::from_str::<serde_json::Value>(&contents).ok())
@@ -44,16 +44,45 @@ fn launch_backend(app: &tauri::AppHandle) -> Result<(), String> {
     if url.scheme() != "http" || url.host_str() != Some("127.0.0.1") { return Err("后台页面必须使用本机地址".into()); }
     app.get_webview_window("main").ok_or("找不到主窗口")?.navigate(url).map_err(|e| e.to_string())
 }
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
 fn main() {
     let result = tauri::Builder::default().manage(Backend(Mutex::new(None)))
     .on_window_event(|window, event| {
-        if window.label() == "main" && minimize_on_close() {
+        if window.label() == "main" && tray_on_close() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.minimize();
+                if window.hide().is_ok() {
+                    api.prevent_close();
+                }
             }
         }
     }).setup(|app| {
+        let show = MenuItem::with_id(app, "show", "显示 Flow", true, None::<&str>)?;
+        let quit = MenuItem::with_id(app, "quit", "退出 Flow", true, None::<&str>)?;
+        let menu = Menu::with_items(app, &[&show, &quit])?;
+        let mut tray = TrayIconBuilder::with_id("flow-tray")
+            .tooltip("Flow · 应用流量管理")
+            .menu(&menu)
+            .show_menu_on_left_click(false)
+            .on_menu_event(|app, event| match event.id.as_ref() {
+                "show" => show_main_window(app),
+                "quit" => app.exit(0),
+                _ => {}
+            })
+            .on_tray_icon_event(|tray, event| {
+                if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                    show_main_window(tray.app_handle());
+                }
+            });
+        if let Some(icon) = app.default_window_icon() {
+            tray = tray.icon(icon.clone());
+        }
+        tray.build(app)?;
         let handle = app.handle().clone();
         std::thread::spawn(move || {
             if let Err(error) = launch_backend(&handle) {

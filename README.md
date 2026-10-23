@@ -1,9 +1,33 @@
 # Flow 应用流量管理
 
-基于 Clash Verge Rev / Mihomo，按应用和域名选择直连、代理组、具体代理节点或沿用订阅规则。支持 Windows、Linux、macOS，当前版本 **2.1.2**。
+## 快速运行
+
+先启动 Clash Verge Rev。Linux 安装 DEB / RPM 包后，直接运行：
+
+```bash
+flow-traffic-manager
+```
+
+Linux / macOS 从源码运行（在项目根目录执行，首次自动创建独立环境并安装 Python 依赖）：
+
+```bash
+./run.sh
+```
+
+Windows 从源码运行：双击项目根目录的 `run.bat`，或在终端执行：
+
+```bat
+.\run.bat
+```
+
+首次自动创建独立环境并安装依赖；需先安装 Python 3.10+ 和 WebView2 Runtime，并启动 Clash Verge Rev。
+
+基于 Clash Verge Rev / Mihomo，按应用、域名和 IP/CIDR 选择直连、代理组、具体代理节点或沿用订阅规则。支持 Windows、Linux、macOS，当前版本 **2.1.3**。
 
 - 按进程名称或完整路径分流，查看连接、流量和代理链。
-- 设置域名规则，优先于应用规则。
+- 设置域名与 IPv4 / IPv6 CIDR 规则，优先于应用规则；IPv4 无掩码时，末位 .0 自动补 /24，其他地址补 /32。
+- 代理目标缺失时自动失能对应规则，目标恢复后自动启用。
+- 关闭桌面窗口可隐藏至系统托盘，通过托盘菜单恢复或退出；Linux 源码版支持 AppIndicator 托盘。
 - 从 RustDesk 日志学习远端地址，按需绕过 TUN。
 - 通过 WebDAV 手动同步规则，或在修改后自动上传。
 - 在应用内控制后台常驻及当前用户登录自启。
@@ -32,6 +56,24 @@ Windows 需要 WebView2 Runtime，并在 Clash 中启用本机 TCP API，例如 
 - `desktop/`：源码桌面入口使用的图标和启动页面。
 
 ## 本地构建
+
+### 一键编译
+
+在对应平台的项目根目录执行，无需手动激活 Python 环境：
+
+| 平台 | 命令 | 产物 |
+| --- | --- | --- |
+| Windows | `.\build-windows.bat`（也可双击） | EXE / MSI |
+| Linux | `./build-linux.sh` | DEB / RPM / AppImage |
+| macOS | `./build-macos.sh` | APP / DMG |
+
+脚本会自动创建构建环境、安装 Python 和 npm 项目依赖、重新打包后端并编译桌面程序。macOS 自动识别 Intel / Apple Silicon；Python 与 Rust 架构需一致。首次构建需要联网。
+
+预先安装 Python 3.10+、Node.js（含 npm）及 Rust（Cargo）。Windows 还需 Visual Studio C++ Build Tools（桌面 C++ 工作负载）和 Windows SDK；macOS 执行 `xcode-select --install` 安装命令行工具；Linux 的系统依赖见下方命令，并需 `pkg-config` 和 `python3-venv`。
+
+可追加 `--check` 仅检查平台、工具及部分系统依赖。此检查不替代完整编译及平台 SDK 检查。安装包输出在 `src-tauri/target/<target>/release/bundle/`。
+
+### 手动编译
 
 桌面程序使用 Tauri v2 + Rust，Python 后端通过 PyInstaller 打包。需安装 Node.js、Rust 和 Python 3.10+，在目标操作系统及对应 CPU 架构上构建。
 
@@ -62,7 +104,15 @@ npm run tauri:build -- --target x86_64-pc-windows-msvc --bundles nsis,msi
 
 ## 源码运行
 
-保留 Python 桌面入口，便于调试：
+Linux / macOS 一键启动，自动安装 Python 依赖，不需要激活 Conda：
+
+```bash
+./run.sh
+```
+
+需要 Python 3 和 venv；Ubuntu / Debian 若缺少 venv，先执行 `sudo apt install python3-venv`。Linux 脚本使用系统 Python 并启用系统包访问，以加载 GTK。
+
+Windows 推荐双击 `run.bat` 自动准备环境；也可在已安装 Python 的终端中手动执行：
 
 ```bash
 python -m pip install -r requirements-desktop.txt

@@ -226,6 +226,56 @@ class DesktopController:
         self._window = None
         self._operation = threading.Lock()
         self._ready = False
+        self._tray = None
+        self._quitting = False
+
+    def setup_tray(self):
+        if not sys.platform.startswith('linux'):
+            return
+        from gi.repository import GLib
+        GLib.idle_add(self._create_linux_tray)
+
+    def _create_linux_tray(self):
+        if self._tray is not None:
+            return False
+        try:
+            import gi
+            try:
+                gi.require_version('AyatanaAppIndicator3', '0.1')
+                from gi.repository import AyatanaAppIndicator3 as Indicator
+            except ValueError:
+                gi.require_version('AppIndicator3', '0.1')
+                from gi.repository import AppIndicator3 as Indicator
+            from gi.repository import Gtk
+            icon = str((resource_root() / 'desktop/flow.png').resolve())
+            tray = Indicator.Indicator.new(APP_ID, icon, Indicator.IndicatorCategory.APPLICATION_STATUS)
+            tray.set_title('Flow · 应用流量管理')
+            menu = Gtk.Menu()
+            show = Gtk.MenuItem(label='显示 Flow')
+            show.connect('activate', lambda *_: self._show_from_tray())
+            quit_item = Gtk.MenuItem(label='退出 Flow')
+            quit_item.connect('activate', lambda *_: self._quit_from_tray())
+            menu.append(show)
+            menu.append(quit_item)
+            menu.show_all()
+            tray.set_menu(menu)
+            tray.set_status(Indicator.IndicatorStatus.ACTIVE)
+            self._tray = tray
+        except Exception:
+            logging.exception('Could not create system tray; keep taskbar access')
+        return False
+
+    def _show_from_tray(self):
+        # Tray callbacks run on GTK's UI thread; avoid synchronous webview calls.
+        native = self._window.native
+        native.deiconify()
+        native.show_all()
+        native.present()
+
+    def _quit_from_tray(self):
+        self._quitting = True
+        # Destroy through a worker: webview dispatches destruction back to GTK.
+        threading.Thread(target=self._window.destroy, daemon=True).start()
 
     def _status(self, text):
         self._window.run_js('document.getElementById("status").textContent=' + json.dumps(text))
@@ -236,12 +286,21 @@ class DesktopController:
         try:
             initialize(self._data, clash)
             url = self._backend.start()
-            # The dashboard has no Python bridge. Keep its existing strict CSP.
-            self._webview.create_window('Flow · 应用流量管理', url=url,
-                width=1280, height=880, min_size=(820, 600),
-                background_color='#f5f6f8', text_select=True)
+            # Navigate the startup window instead of creating a second native
+            # window and destroying the first while GTK is handling its load.
+            # The startup page needs retry/select_clash, but the dashboard
+            # uses HTTP APIs exclusively. pywebview 6.2.1 generates JS API
+            # functions with new Function(), which the dashboard CSP forbids.
+            # Detach the startup bridge before the next document is injected.
+            startup_api = self._window._js_api
+            self._window._js_api = None
             self._ready = True
-            self._window.destroy()
+            try:
+                self._window.load_url(url)
+            except Exception:
+                self._window._js_api = startup_api
+                self._ready = False
+                raise
         except Exception as exc:
             logging.exception('Desktop startup failed')
             self._status(str(exc) + '\n请保持 Clash Verge 运行，再重试或选择配置目录。')
@@ -262,14 +321,17 @@ class DesktopController:
             self._launch(selected[0])
 
     def _on_closing(self):
-        if not self._ready:
+        if self._quitting or not self._ready:
             return
         try:
             preferences = json.loads((self._data / 'desktop.json').read_text(encoding='utf-8'))
         except (OSError, ValueError):
             preferences = {}
         if preferences.get('close_action') == 'minimize':
-            self._window.minimize()
+            if self._tray is not None:
+                self._window.hide()
+            else:
+                self._window.minimize()
             return False
 
     def _close(self):
@@ -314,6 +376,7 @@ def main(argv=None):
     controller._window = window
     window.events.closing += controller._on_closing
     # Start only after the first document exists, so errors can be shown in the window.
+    window.events.loaded += controller.setup_tray
     window.events.loaded += controller._launch
     try:
         webview.start(gui='gtk' if sys.platform.startswith('linux') else None,
