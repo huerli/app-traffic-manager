@@ -22,7 +22,7 @@ Windows 从源码运行：双击项目根目录的 `run.bat`，或在终端执�
 
 首次自动创建独立环境并安装依赖；需先安装 Python 3.10+ 和 WebView2 Runtime，并启动 Clash Verge Rev。
 
-基于 Clash Verge Rev / Mihomo，按应用、域名和 IP/CIDR 选择直连、代理组、具体代理节点或沿用订阅规则。支持 Windows、Linux、macOS，当前版本 **2.1.5**。
+基于 Clash Verge Rev / Mihomo，按应用、域名和 IP/CIDR 选择直连、代理组、具体代理节点或沿用订阅规则。支持 Windows、Linux、macOS，当前版本 **2.1.6**。
 
 - 按进程名称或完整路径分流，查看连接、流量和代理链。
 - 设置域名与 IPv4 / IPv6 CIDR 规则，优先于应用规则；IPv4 无掩码时，末位 .0 自动补 /24，其他地址补 /32。
@@ -139,6 +139,20 @@ Linux Python 桌面入口另需 `python3-gi`、`python3-gi-cairo`、`gir1.2-gtk-
 - 首次识别失败：检查 Clash 配置目录是否包含 `clash-verge.yaml` 和 `profiles/Script.js`，在 `settings.json` 中指定 `clash_dir` 后重启。
 - WebDAV 同步应用和域名规则，不同步 Clash 密钥、学习到的 IP 或连接记录。下载会替换本机规则并生成 `policies-before-sync.json` 备份；建议使用 HTTPS 和应用专用密码。
 
+### macOS 提示“已损坏，无法打开”
+
+浏览器下载的应用会带有隔离标记，旧构建还可能缺少整个 `.app` 的完整签名。新构建默认使用 ad-hoc 本地签名，CI 会校验应用及后端的签名；该签名没有 Apple 开发者身份，也未经过公证，首次打开仍可能需要在“系统设置 → 隐私与安全性”中允许。
+
+已安装的旧版若出现“已损坏”，确认应用来自本项目可信构建后，可在终端执行以下命令，仅修复这一份应用：
+
+```bash
+codesign --force --sign - "/Applications/Flow Traffic Manager.app"
+codesign --verify --deep --strict --verbose=2 "/Applications/Flow Traffic Manager.app"
+xattr -dr com.apple.quarantine "/Applications/Flow Traffic Manager.app"
+```
+
+构建配置未启用 hardened runtime，以便 ad-hoc 签名的 PyInstaller 后端加载打包的 Python 动态库。正式签名与公证发布时，需配置 Developer ID、重新启用 hardened runtime，并为 Python 后端配置匹配的签名及动态库加载权限。
+
 ## 自动构建
 
 `.github/workflows/desktop.yml` 构建 Windows x64、Linux x64、macOS Intel / Apple Silicon。仅推送 `v*` 版本标签时自动构建并发布，普通分支推送和 PR 不触发。保留手动运行入口，可通过 `publish_release` 控制是否发布。
@@ -147,4 +161,4 @@ Linux Python 桌面入口另需 `python3-gi`、`python3-gi-cairo`、`gir1.2-gtk-
 
 仅发布各平台安装包及 SHA-256 校验文件。流水线检查版本一致性和标签对应提交，先上传至草稿，再正式发布；已发布版本禁止覆盖，更新时需提升版本号。
 
-发布前保持 `script/runtime_paths.py`、`package.json`、`src-tauri/Cargo.toml` 和 `src-tauri/tauri.conf.json` 中的版本一致。分发包暂未配置代码签名或 macOS 公证；跨平台构建成功不代表各系统功能均已实机验证。
+发布前保持 `script/runtime_paths.py`、`package.json`、`src-tauri/Cargo.toml` 和 `src-tauri/tauri.conf.json` 中的版本一致。macOS 分发包使用 ad-hoc 签名，暂未配置 Developer ID 签名和公证；Windows 分发包暂未配置代码签名。跨平台构建成功不代表各系统功能均已实机验证。

@@ -70,6 +70,10 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         with:
           args: ${{ matrix.target_arg }} --bundles ${{ matrix.bundles }}
+      - name: Verify macOS application signature
+        if: runner.os == 'macOS'
+        shell: bash
+        run: codesign --verify --deep --strict --verbose=2 "src-tauri/target/${{ matrix.target }}/release/bundle/macos/Flow Traffic Manager.app"
       - name: Stage release installers
         run: python script/release-assets.py collect --target ${{ matrix.target }} --bundle src-tauri/target/${{ matrix.target }}/release/bundle --output release-assets
       - name: Upload Tauri bundles
